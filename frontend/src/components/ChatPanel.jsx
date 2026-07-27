@@ -53,7 +53,6 @@ export default function ChatPanel() {
           <h2 className="panel-title">AI Complaint Intake Assistant</h2>
           <p className="panel-subtitle">Upload a document or describe the complaint</p>
         </div>
-        <span className="badge badge-beta">BETA</span>
       </header>
 
       <div className="panel-body">

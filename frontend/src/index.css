@@ -174,12 +174,6 @@ body {
   color: var(--primary);
 }
 
-.badge-beta {
-  background: var(--primary-soft);
-  border-color: #bfdbfe;
-  color: var(--primary);
-}
-
 /* ---------------------------------------------------------------------------
    Form sections and fields
    --------------------------------------------------------------------------- */
