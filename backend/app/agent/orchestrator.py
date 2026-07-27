@@ -172,7 +172,10 @@ def extract_all(state: AgentState) -> Dict[str, Any]:
             prompts.EXTRACT_SYSTEM,
             prompts.build_extract_prompt(state["user_message"], state.get("source_label")),
             ComplaintFields,
-            max_tokens=1200,
+            # 11 fields, of which only complaint_description is long. Measured
+            # output is 250-350 tokens; 700 is roughly double that. See the
+            # note on assess_risk for why this is not set higher.
+            max_tokens=700,
         )
     except LLMError as exc:
         return {"error": str(exc)}
@@ -256,11 +259,20 @@ def assess_risk(state: AgentState) -> Dict[str, Any]:
             prompts.build_risk_prompt(fields),
             RiskAssessment,
             temperature=0.2,  # a touch of warmth: this text is prose, not data
-            # Six fields now: summary, severity, action, justification, root
-            # cause, CAPA. ~310 tokens typically, ~700 if the model is verbose.
-            # The headroom is free (max_tokens caps, it does not target) and a
-            # truncated JSON object would fail validation and burn the retry.
-            max_tokens=1400,
+            # Six fields: summary, severity, action, justification, root cause,
+            # CAPA. Measured output is ~310 tokens, ~450 when verbose.
+            #
+            # HEADROOM IS NOT FREE. Groq bills the max_tokens you RESERVE, not
+            # the tokens generated - a 42-token prompt sent with max_tokens=4000
+            # is billed as 4042 against the quota. So every unused token of
+            # headroom is spent, and on the free tier's 100k tokens/day that is
+            # the difference between ~23 and ~31 complaint turns.
+            #
+            # 800 is ~2x the verbose case: enough that truncation is unlikely,
+            # small enough not to waste the budget. If output ever is truncated
+            # the JSON fails the brace-balance check and the repair retry fires,
+            # so the failure mode is a slower turn, not a broken one.
+            max_tokens=800,
         )
     except LLMError as exc:
         logger.warning("Risk assessment failed; keeping extracted fields. %s", exc)
