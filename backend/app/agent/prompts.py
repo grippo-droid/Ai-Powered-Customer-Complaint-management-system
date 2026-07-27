@@ -16,9 +16,11 @@ and every prompt here learns about it automatically. That is the whole reason
 the Field(description=...) text in schemas.py is written the way it is - it
 is prompt copy, not documentation.
 
-Prompt style is tuned for gemma2-9b-it, which is a small 9B model: short
-instructions, explicit negative rules, and a worked example for the two
-tasks it finds hardest (intent classification and partial patching).
+Prompt style: short instructions, explicit negative rules, and a worked
+example for the two hardest tasks (intent classification and partial
+patching). This was tuned for the small model the assignment specified
+(gemma2-9b-it, since decommissioned by Groq); the same prompts work at
+least as well on llama-3.3-70b-versatile, and being explicit costs little.
 """
 
 from __future__ import annotations
@@ -73,8 +75,8 @@ def render_field_spec(model: Type[BaseModel]) -> str:
     reply. But we render it COMPACTLY instead of dumping the raw schema JSON:
     for ComplaintFields the raw schema is 2,927 characters (~730 tokens) of
     anyOf/null wrapping, versus 1,257 characters (~315 tokens) rendered like
-    this - a 2.3x saving, repeated in every prompt, on an 8,192-token window.
-    It also reads far better to a 9B model than nested JSON Schema does.
+    this - a 2.3x saving, repeated in every prompt. It also reads better to
+    the model than nested JSON Schema does.
 
     Output looks like:
         - batch_number (string or null): Batch or lot number exactly as printed...

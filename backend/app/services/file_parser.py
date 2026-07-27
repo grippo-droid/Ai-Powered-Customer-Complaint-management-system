@@ -26,10 +26,14 @@ import fitz  # PyMuPDF
 
 from app.config import settings
 
-# gemma2-9b-it has an 8,192-token context window, and the extracted document
-# is only one part of the prompt (schema + instructions + chat history share
-# it). ~12k characters is roughly 3k tokens, which leaves comfortable room.
-# Truncating here is far better than a 413 from Groq mid-demo.
+# A cap on how much document text reaches the LLM. ~12k characters is roughly
+# 3k tokens - comfortably inside the model's context window, and it bounds
+# latency and token cost on a pathologically long attachment. A real complaint
+# letter or email is a small fraction of this, so nothing useful is lost.
+#
+# This was originally sized for gemma2-9b-it's 8,192-token window. That model
+# was decommissioned by Groq; llama-3.3-70b-versatile has 131k, so the cap is
+# now about cost and latency rather than a hard limit.
 MAX_TEXT_CHARS = 12_000
 
 ALLOWED_EXTENSIONS = frozenset({".pdf", ".docx", ".txt", ".eml"})
