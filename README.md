@@ -54,6 +54,39 @@ Four ready-made complaint documents live in [`samples/`](samples/), one per
 file format, with a suggested demo sequence in
 [`samples/README.md`](samples/README.md).
 
+### Screenshots
+
+**Empty intake form.** Every field reads *"Awaiting AI extraction…"* and the
+badge shows *Pending Triage*. Nothing is typed by hand to get started.
+
+![The empty complaint form and AI intake assistant](docs/screenshots/01-empty-form.png)
+
+**After uploading a complaint email.** One `.eml` upload fills all 11 fields —
+including the customer name and complaint date, which are read from the message
+headers rather than the body. The badge flips to *Ready to Commit*.
+
+![The form fully populated from an uploaded email](docs/screenshots/02-extracted.png)
+
+**The AI Copilot card.** Six generated outputs from a single LLM call: a
+one-line summary, suggested severity, next action, and a risk justification —
+then, below the divider, root-cause and CAPA suggestions explicitly framed as
+hypotheses for QA to investigate rather than findings.
+
+![The AI Copilot risk assessment card with all six outputs](docs/screenshots/03-ai-copilot-card.png)
+
+**A conversational correction.** The user types *"actually the batch number is
+XLP-8396-0635"*. Only **Batch/Lot Number** is highlighted; every other field is
+left untouched, and the assistant confirms in plain language exactly what it
+changed and that it re-ran the risk assessment as a result.
+
+![A correction highlighting only the changed field](docs/screenshots/04-correction-highlight.png)
+
+**Duplicate detection.** Filing a complaint against a batch already in the
+ledger appends a notice naming the prior record — without blocking the commit,
+because only a human can tell a duplicate report from a second occurrence.
+
+![Duplicate batch notice appended to the chat reply](docs/screenshots/05-duplicate-detection.png)
+
 ---
 
 ## Tech stack
