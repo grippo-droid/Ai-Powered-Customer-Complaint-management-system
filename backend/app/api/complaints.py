@@ -40,6 +40,7 @@ from app.schemas import (
     SessionCreateResponse,
     SessionStateResponse,
 )
+from app.services.duplicates import check_for_duplicates
 from app.services.file_parser import FileParseError, extract_text_from_upload
 
 logger = logging.getLogger(__name__)
@@ -251,21 +252,33 @@ async def send_message(
         ) from exc
 
     new_state: ComplaintFormState = result["form_state"]
+    assistant_message = result["assistant_message"]
+
+    # --- Duplicate complaint detection ------------------------------------
+    # Only on a NEW complaint. On a correction the reviewer has already seen
+    # this notice for the batch, and repeating it on every small edit would
+    # train them to ignore it.
+    duplicate_notice: Optional[str] = None
+    if result.get("intent") == "new_complaint":
+        duplicate_notice = check_for_duplicates(db, new_state.fields.batch_number)
+        if duplicate_notice:
+            assistant_message = f"{assistant_message} {duplicate_notice}"
 
     history.append(
         ChatMessage(role="user", content=f"[Uploaded {source_label}]" if source_label else text)
     )
-    history.append(ChatMessage(role="assistant", content=result["assistant_message"]))
+    history.append(ChatMessage(role="assistant", content=assistant_message))
     _save(db, record, new_state, history)
 
     return MessageResponse(
         session_id=session_id,
         form_state=new_state,
         changed_fields=result["changed_fields"],
-        assistant_message=result["assistant_message"],
+        assistant_message=assistant_message,
         status=result["status"],
         intent=result.get("intent"),
         error=result.get("error"),
+        duplicate_notice=duplicate_notice,
     )
 
 

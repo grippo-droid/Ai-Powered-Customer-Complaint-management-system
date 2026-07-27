@@ -313,6 +313,11 @@ class MessageResponse(BaseModel):
     intent: Optional[str] = None     # surfaced for the demo / debugging
     error: Optional[str] = None
 
+    # Set when this batch already appears in the committed ledger. The text is
+    # also appended to assistant_message so it shows in the chat; this field
+    # is here so a client could style it separately without parsing prose.
+    duplicate_notice: Optional[str] = None
+
 
 class SessionStateResponse(BaseModel):
     session_id: str
