@@ -1,0 +1,29 @@
+CUSTOMER COMPLAINT INTAKE NOTE - TELEPHONE
+Recorded by: R. Iyer, Customer Care Desk
+Date of call: 22 July 2026, 10:05 IST
+
+Caller: Mr. Sanjay Kulkarni, proprietor, Wellness Pharmacy, Pune.
+Contact: +91 98220 44711
+
+Nature of call:
+Caller reports that a customer returned two vials of Ceftriaxone for
+Injection 1 g after noticing "cloudy swirling material" in the reconstituted
+solution. Caller inspected the remaining stock from the same carton and
+found a further four vials where a fine white sediment is visible against
+the light before reconstitution.
+
+Product        : Ceftriaxone for Injection USP 1 g
+Batch / Lot    : ZPL-2438-1157
+Mfg date       : 11/2025
+Expiry         : 10/2027
+Qty affected   : 6 vials
+
+Caller confirms the vials were stored at ambient temperature in the
+dispensary and were not exposed to direct sunlight. Two vials had already
+been administered to patients before the issue was noticed; no adverse
+reaction has been reported to the pharmacy at this time.
+
+Caller has withdrawn the remaining stock of this batch from sale and is
+requesting collection and credit.
+
+Action: logged for QA review.
