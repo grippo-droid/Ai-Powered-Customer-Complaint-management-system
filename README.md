@@ -20,7 +20,7 @@ Built for the AIVOA Round 1 AI Product Engineer assignment.
 - [API reference](#api-reference)
 - [Error handling](#error-handling)
 - [Security](#security)
-- [Bonus feature: completeness checker](#bonus-feature-completeness-checker)
+- [Bonus features](#bonus-features)
 - [A note on the LLM model](#a-note-on-the-llm-model)
 - [Project structure](#project-structure)
 
@@ -31,9 +31,11 @@ Built for the AIVOA Round 1 AI Product Engineer assignment.
 A two-panel interface.
 
 **Left — Log Customer Complaint.** Four sections: Origin & Customer Details,
-Product & Batch Identification, Complaint Details, and an AI Copilot Risk
-Assessment. A status badge moves from *Pending Triage* to *Ready to Commit*,
-and the record is written to a permanent ledger with **Commit to QMS Ledger**.
+Product & Batch Identification, Complaint Details, and an AI Copilot card that
+produces six outputs — a one-line summary, suggested severity, suggested next
+action, a risk justification, possible root causes, and a CAPA recommendation.
+A status badge moves from *Pending Triage* to *Ready to Commit*, and the record
+is written to a permanent ledger with **Commit to QMS Ledger**.
 
 **Right — AI Complaint Intake Assistant.** Accepts a pasted complaint email or
 an uploaded PDF / DOCX / TXT / EML. The first message fills in the whole form.
@@ -246,6 +248,25 @@ quantity, both dates, complaint type, description). `customer_name`,
 `complaint_source` and `complaint_date` are **not** — correcting them skips
 the risk node entirely, which is also roughly 3× faster on that turn.
 
+### Six AI outputs, one LLM call
+
+The AI Copilot card produces a summary, a severity, a next action, a
+justification, root causes and a CAPA recommendation. Those could have been
+four graph nodes. They are one, because they are **one act of reasoning**:
+
+- They derive from the same evidence and are stale on the same trigger, so
+  separate nodes would each need `DEFECT_RELEVANT_FIELDS` re-applied — with
+  the failure mode that CAPA refreshes while severity does not, leaving an
+  incoherent record.
+- Asking separately invites contradiction: a `Critical` severity paired with a
+  CAPA that reads like a paperwork tweak.
+- It keeps a defect-relevant turn at **3 Groq calls and ~1.4s** instead of 5
+  calls and ~4s, which is very visible in a live demo.
+
+The tradeoff is a single prompt with six outputs rather than six focused ones.
+Worth it here: the outputs are short, and coherence between them matters more
+than independent optimisation of each.
+
 ### The raw `groq` SDK, not `langchain-groq`
 
 LangGraph is used for orchestration, which is what it is good at. For the LLM
@@ -310,14 +331,17 @@ happened to their data.
 | `GET` | `/complaints/session/{id}` | Rehydrate form + chat after a page refresh |
 | `POST` | `/complaints/session/{id}/message` | Send text and/or a file; runs the graph |
 | `POST` | `/complaints/session/{id}/commit` | Write the record to the ledger |
-| `GET` | `/complaints` | List committed complaints, newest first |
+| `GET` | `/complaints` | List committed complaints, newest first, with their AI summaries |
 | `GET` | `/health` | Liveness check |
 
 Session creation is idempotent by client-supplied id, so a page refresh or
 React StrictMode's double effect invocation cannot strand empty rows.
 
 The message endpoint takes `multipart/form-data` with an optional `message`
-field and an optional `file`, so one endpoint serves both input paths.
+field and an optional `file`, so one endpoint serves both input paths. Its
+response carries `changed_fields` (which fields to highlight) and
+`duplicate_notice` (set when the batch is already in the ledger) alongside the
+full form state.
 
 ---
 
@@ -353,22 +377,89 @@ recorded in the message history and survives a refresh.
 
 ---
 
-## Bonus feature: completeness checker
+## Bonus features
 
-`format_output` compares the current form against a priority-ordered list of
-important fields and appends a nudge to its reply:
+Five of the brief's optional features are implemented. **None of them adds an
+LLM call to the per-turn flow** — three ride in the existing risk call, one is
+a database query, and one is pure formatting.
+
+| Feature | Where it lives | Extra Groq calls |
+|---------|----------------|------------------|
+| AI Risk Classification | `assess_risk` node | — (core) |
+| Complaint Completeness Checker | `format_output` node | **0** |
+| Duplicate Complaint Detection | `services/duplicates.py` | **0** |
+| Complaint Summary | `RiskAssessment` model | **0** |
+| Root Cause Recommendation | `RiskAssessment` model | **0** |
+| CAPA Recommendation | `RiskAssessment` model | **0** |
+
+### Complaint completeness checker
+
+`format_output` compares the form against a priority-ordered list of important
+fields and appends a nudge:
 
 > Still missing: Customer Name and Expiry Date. You can tell me, or type it
 > into the form.
 
-This is the *Complaint Completeness Checker* from the brief's bonus list. It
-costs no extra LLM call — it is built from data the graph already has, and it
-tells the user what to supply next rather than leaving them to spot the gap.
+Built from data the graph already has, so it costs nothing. Visible when
+uploading `samples/complaint-03-seal-integrity.pdf`: a formal letter never
+states how the complaint arrived, so `complaint_source` is correctly left
+`null` — the model is instructed never to invent a value — and the checker
+points it out.
 
-It is visible in the demo when uploading `samples/complaint-03-seal-integrity.pdf`:
-a formal letter never states how the complaint was received, so
-`complaint_source` is correctly left `null` — the model is instructed never to
-invent a value — and the checker points it out.
+### Duplicate complaint detection
+
+When a **new** complaint names a batch already in the committed ledger, the
+reply ends with:
+
+> Note: batch ZPL-2506-0412 already has 1 prior complaint on record
+> (Complaint #1, filed 2026-07-27).
+
+Deliberately **not** an LLM call and **not** a graph node. It is an exact-match
+lookup on `ix_complaints_batch_number` — an LLM would be slower, cost money,
+and could be wrong about something a `WHERE` clause is right about every time.
+It also stays out of the graph because the pipeline has no database session by
+design; that is what lets the API layer own persistence.
+
+It fires only on new complaints — repeating it on every correction would train
+reviewers to ignore it — and it **informs without blocking**. Only a human can
+tell a duplicate report of one event from a genuine second occurrence.
+
+### Complaint summary
+
+A one-sentence ticket title, shown at the top of the AI Copilot card and
+returned by `GET /complaints` so the ledger is scannable without opening each
+record:
+
+> Label mix-up in Amlodipine Besylate Tablets IP 5 mg batch ZPL-2506-0412,
+> 3 cartons affected
+
+The prompt supplies a worked example and forbids preamble, because a small
+model's instinct is to write a sentence *about* the complaint rather than a
+title *of* it.
+
+### Root cause recommendation
+
+One or two plausible causes for the investigation to test:
+
+> Possible root causes: inadequate sealing process parameters or equipment
+> malfunction at the blistering station; or insufficient quality control checks
+> on packaging integrity.
+
+These are **hypotheses, not findings** — the model has not seen the batch
+record, the equipment logs or the retained sample. The prompt says so, and the
+UI repeats it: the fields sit under a *"Suggestions for QA investigation"*
+divider and the label reads *"Possible Root Causes (to investigate)"*. In a
+regulated context a reviewer must never mistake an AI hypothesis for a
+conclusion, and styling is part of how that is enforced.
+
+### CAPA recommendation
+
+One corrective action and one preventive action, capped at one to two sentences
+each:
+
+> **Corrective:** quarantine and re-inspect the remaining stock from batch
+> ZPL-2491-0088. **Preventive:** review and enhance the packaging integrity
+> testing protocol, including seal strength checks post-production.
 
 ---
 
