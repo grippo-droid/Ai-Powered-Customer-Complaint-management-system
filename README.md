@@ -1,0 +1,415 @@
+# AI-Powered Customer Complaint Management System
+
+A pharmaceutical QMS complaint-intake tool. A LangGraph agent reads a complaint
+document or email, populates the entire complaint form, generates an initial
+risk assessment, and then applies **conversational corrections to individual
+fields** without re-extracting everything else.
+
+Built for the AIVOA Round 1 AI Product Engineer assignment.
+
+---
+
+## Contents
+
+- [What it does](#what-it-does)
+- [Tech stack](#tech-stack)
+- [Setup](#setup)
+- [Architecture](#architecture)
+- [The correction mechanic](#the-correction-mechanic)
+- [Design decisions](#design-decisions)
+- [API reference](#api-reference)
+- [Error handling](#error-handling)
+- [Security](#security)
+- [Bonus feature: completeness checker](#bonus-feature-completeness-checker)
+- [A note on the LLM model](#a-note-on-the-llm-model)
+- [Project structure](#project-structure)
+
+---
+
+## What it does
+
+A two-panel interface.
+
+**Left — Log Customer Complaint.** Four sections: Origin & Customer Details,
+Product & Batch Identification, Complaint Details, and an AI Copilot Risk
+Assessment. A status badge moves from *Pending Triage* to *Ready to Commit*,
+and the record is written to a permanent ledger with **Commit to QMS Ledger**.
+
+**Right — AI Complaint Intake Assistant.** Accepts a pasted complaint email or
+an uploaded PDF / DOCX / TXT / EML. The first message fills in the whole form.
+Every message after that is treated as a correction.
+
+The behaviour worth seeing:
+
+| You say | What happens |
+|---------|--------------|
+| *(paste a complaint email)* | All 11 fields populate, risk assessment generated |
+| `the batch number is BN-9999 and 40 vials were affected` | **Only those two fields** flash green; risk regenerated |
+| `the customer is MedPlus Pharmacy` | **Only that field** flashes; risk assessment **untouched** |
+| *(refresh the browser)* | Conversation and form restore from MySQL |
+
+Four ready-made complaint documents live in [`samples/`](samples/), one per
+file format, with a suggested demo sequence in
+[`samples/README.md`](samples/README.md).
+
+---
+
+## Tech stack
+
+| Layer | Choice |
+|-------|--------|
+| Frontend | React 18 + Redux Toolkit, Vite |
+| Backend | Python 3.11 + FastAPI |
+| Agent framework | LangGraph |
+| LLM | Groq (see [note on the model](#a-note-on-the-llm-model)) |
+| Database | MySQL 8 via SQLAlchemy 2 ORM |
+| PDF parsing | PyMuPDF (`fitz`) |
+| Font | Google Inter |
+
+---
+
+## Setup
+
+### Prerequisites
+
+- Python **3.11**
+- Node.js 18+
+- MySQL 8 running locally
+- A Groq API key — <https://console.groq.com/keys>
+
+### 1. Database
+
+```sql
+CREATE DATABASE complaint_qms CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+```
+
+Tables are created automatically on first startup.
+
+### 2. Backend
+
+```bash
+cd backend
+python -m venv .venv
+.venv\Scripts\activate          # macOS/Linux: source .venv/bin/activate
+pip install -r requirements.txt
+
+cp .env.example .env             # Windows: copy .env.example .env
+```
+
+Edit `.env` and set your real values:
+
+```ini
+GROQ_API_KEY=gsk_your_key_here
+GROQ_MODEL=llama-3.3-70b-versatile
+DATABASE_URL=mysql+pymysql://root:your_password@localhost:3306/complaint_qms
+CORS_ORIGINS=http://localhost:5173,http://127.0.0.1:5173
+```
+
+> If your MySQL password contains `@ : / #`, URL-encode it — `@` becomes `%40`.
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Expected: `Starting up - model=...` then `Database tables ready`.
+Interactive API docs at <http://127.0.0.1:8000/docs>.
+
+### 3. Frontend
+
+In a second terminal:
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Open <http://localhost:5173>.
+
+### Troubleshooting
+
+| Symptom | Cause |
+|---------|-------|
+| `RuntimeError: Configuration error` | `.env` missing, or a required value is blank |
+| `Access denied for user 'root'` | Wrong MySQL password in `DATABASE_URL` |
+| `Unknown database 'complaint_qms'` | Step 1 not run |
+| `400 model_decommissioned` | `GROQ_MODEL` unset or set to a retired model |
+| Chat says *"rejected the API key"* | Bad `GROQ_API_KEY` — the form is left intact |
+| CORS error in the browser console | Frontend not on port 5173, or `CORS_ORIGINS` mismatch |
+
+---
+
+## Architecture
+
+### Request lifecycle
+
+Every chat turn is the same four steps. **The API layer holds no state.**
+
+```
+browser ──▶ FastAPI ──▶ load session row from MySQL
+                          │
+                          ▼
+                     LangGraph run  (up to 3 LLM calls)
+                          │
+                          ▼
+                     save session row to MySQL
+                          │
+                          ▼
+  form state + changed_fields + chat message ──▶ Redux ──▶ both panels
+```
+
+Because nothing lives in server memory, you can restart the backend
+mid-conversation and the chat still remembers.
+
+### The LangGraph pipeline
+
+The entire graph is in one file — [`backend/app/agent/orchestrator.py`](backend/app/agent/orchestrator.py).
+
+```
+                        START
+                          │
+                  ┌───────▼────────┐
+                  │ classify_intent│  new complaint, or a correction?
+                  └───────┬────────┘
+              new_complaint│correction              ← conditional edge
+              ┌────────────┴────────────┐
+    ┌─────────▼────────┐      ┌─────────▼────────┐
+    │   extract_all    │      │   patch_fields   │
+    │  fills ALL 11    │      │  fills ONLY the  │
+    │     fields       │      │ mentioned fields │
+    └─────────┬────────┘      └─────────┬────────┘
+              └────────────┬────────────┘
+              defect-relevant field changed?         ← conditional edge
+              ┌────yes─────┴─────no──────┐
+   ┌──────────▼─────────┐                │
+   │    assess_risk     │                │
+   │ severity · action  │                │
+   │   · justification  │                │
+   └──────────┬─────────┘                │
+              └────────────┬─────────────┘
+                  ┌────────▼────────┐
+                  │  format_output  │  message + changed_fields + status
+                  └────────┬────────┘
+                          END
+```
+
+**Three LLM calls maximum per turn** — classify, extract-or-patch, risk.
+`format_output` makes no LLM call at all.
+
+The node is named `assess_risk` rather than `risk_assessment` because
+LangGraph forbids a node name that collides with a state channel key.
+
+---
+
+## The correction mechanic
+
+This is the core of the assignment, and it falls out of Pydantic rather than
+being hand-built.
+
+Every field on `ComplaintFields` is `Optional`. On a correction the LLM is
+told to emit **only** the keys the user mentioned:
+
+```python
+patch = call_structured(PATCH_SYSTEM, prompt, ComplaintFields)
+mentioned = patch.model_dump(exclude_unset=True)
+#  -> {'batch_number': 'BN-9999', 'affected_quantity': '40 vials'}
+```
+
+`exclude_unset=True` returns exactly the keys the model chose to set — which
+is exactly the set of fields the user talked about. No second model, no
+hand-maintained key list.
+
+The merge **re-validates** rather than using `model_copy(update=...)`:
+
+```python
+merged = ComplaintFields.model_validate({**current.model_dump(), **mentioned})
+```
+
+`model_copy` skips validators, so a corrected date would never be normalised.
+
+Comparing merged against previous gives `changed_fields`, which is returned to
+the browser. Redux holds that list, the form applies a CSS class to exactly
+those inputs, and a timer clears it. **The frontend never diffs anything.**
+
+---
+
+## Design decisions
+
+### The risk gate — `DEFECT_RELEVANT_FIELDS`
+
+Regenerating the risk assessment on every correction would be wrong, not just
+wasteful: a QA reviewer who has read a severity should not see it silently
+change because someone fixed a customer's spelling.
+
+Eight of the eleven fields are defect-relevant (product, strength, batch,
+quantity, both dates, complaint type, description). `customer_name`,
+`complaint_source` and `complaint_date` are **not** — correcting them skips
+the risk node entirely, which is also roughly 3× faster on that turn.
+
+### The raw `groq` SDK, not `langchain-groq`
+
+LangGraph is used for orchestration, which is what it is good at. For the LLM
+calls themselves a thin wrapper (`agent/llm.py`, one public function) is easier
+to reason about and to explain than a chain abstraction, and it keeps retry
+behaviour, JSON repair and error mapping in one visible place.
+
+### Structured output via Pydantic, with a repair retry
+
+The field list injected into each prompt is **generated from
+`model_json_schema()`**, so a prompt can never drift out of sync with the model
+that validates the reply. Rendering it compactly rather than dumping raw JSON
+Schema cuts it from ~730 to ~315 tokens per prompt.
+
+The reply is JSON-extracted with a brace-balanced scanner — it survives code
+fences, chatty preamble, nested objects and braces inside string literals —
+then validated by Pydantic. On malformed JSON or a `ValidationError` it
+**retries once**, feeding the model its own bad output plus the exact
+`exc.errors()` text. If that also fails it raises a clear error.
+
+**A failed turn never modifies the form.**
+
+### MySQL-backed session persistence
+
+Two tables, doing deliberately different jobs:
+
+| `conversation_sessions` | `complaints` |
+|---|---|
+| Live draft, one row per browser session | Permanent QMS ledger record |
+| JSON columns mirroring the form state | Flat, queryable columns |
+| Rewritten by the AI every turn | Written once, only on human commit |
+
+The AI may rewrite the draft freely, but it can only ever *append* to the
+ledger, and only when a person clicks the button — mirroring how a real QMS
+separates an intake draft from a controlled record.
+
+Note that SQLAlchemy does not track in-place mutation of a JSON column, so the
+code always reassigns the whole attribute.
+
+### Dates are stored as strings
+
+Dates are normalised to ISO where possible, but **unparseable values are kept,
+not dropped**. A `DATE` column would force discarding them. In a regulated
+context, showing a reviewer a malformed date from the source document beats
+silently storing `NULL`. The React form falls back to a text input when a value
+is not ISO, so the odd date stays visible rather than rendering blank.
+
+### The chat confirmation is templated, not generated
+
+`format_output` builds its sentence from the `changed_fields` the graph
+computed. An LLM asked to summarise its own edits will occasionally claim a
+change it never made — and that message is the user's only confirmation of what
+happened to their data.
+
+---
+
+## API reference
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/complaints/session` | Start a session, or resume one by client-supplied id |
+| `GET` | `/complaints/session/{id}` | Rehydrate form + chat after a page refresh |
+| `POST` | `/complaints/session/{id}/message` | Send text and/or a file; runs the graph |
+| `POST` | `/complaints/session/{id}/commit` | Write the record to the ledger |
+| `GET` | `/complaints` | List committed complaints, newest first |
+| `GET` | `/health` | Liveness check |
+
+Session creation is idempotent by client-supplied id, so a page refresh or
+React StrictMode's double effect invocation cannot strand empty rows.
+
+The message endpoint takes `multipart/form-data` with an optional `message`
+field and an optional `file`, so one endpoint serves both input paths.
+
+---
+
+## Error handling
+
+| Failure | Behaviour |
+|---------|-----------|
+| Malformed LLM JSON | Retry once with the error fed back, then a clear error state |
+| Unsupported file type | HTTP **200** with a readable explanation in the chat |
+| Scanned PDF (no text layer) | Detected and explained, not a silently blank form |
+| Password-protected PDF | Explained in the chat |
+| Risk assessment fails | Non-fatal — extracted fields stay on the form |
+| Groq 401 / 429 | Mapped to actionable messages |
+| Unexpected exception | Logged server-side, generic message to the client |
+
+A bad upload is treated as a conversation event, not a server error — it is
+recorded in the message history and survives a refresh.
+
+---
+
+## Security
+
+- `GROQ_API_KEY` is read in one file, used in one file, and returned by no
+  endpoint. The browser talks to this API; only this API talks to Groq.
+- `.env` is git-ignored; only `.env.example` is committed.
+- CORS is restricted to explicit origins — never `*` — with methods limited to
+  `GET`, `POST`, `OPTIONS`.
+- All database access goes through the SQLAlchemy ORM. There is no raw SQL
+  string building anywhere.
+- Uploads are validated for extension and size **before** parsing.
+- Session ids are UUID4, not sequential integers, so in-progress complaints
+  cannot be enumerated by guessing.
+
+---
+
+## Bonus feature: completeness checker
+
+`format_output` compares the current form against a priority-ordered list of
+important fields and appends a nudge to its reply:
+
+> Still missing: Customer Name and Expiry Date. You can tell me, or type it
+> into the form.
+
+This is the *Complaint Completeness Checker* from the brief's bonus list. It
+costs no extra LLM call — it is built from data the graph already has, and it
+tells the user what to supply next rather than leaving them to spot the gap.
+
+It is visible in the demo when uploading `samples/complaint-03-seal-integrity.pdf`:
+a formal letter never states how the complaint was received, so
+`complaint_source` is correctly left `null` — the model is instructed never to
+invent a value — and the checker points it out.
+
+---
+
+## A note on the LLM model
+
+The assignment mandates `gemma2-9b-it`, and that is the default in
+`config.py`. **Groq decommissioned that model during development** — the API
+now returns `400 model_decommissioned`.
+
+The brief also names `llama-3.3-70b-versatile` as an acceptable alternative,
+so that is the value shipped in `.env.example` and the one this project was
+verified against. Nothing else changed: the same prompts, schemas and graph
+run unmodified on either model, and `GROQ_MODEL` selects between them.
+
+---
+
+## Project structure
+
+```
+backend/
+  .env.example            documents every required environment variable
+  requirements.txt
+  app/
+    config.py             the only place environment variables are read
+    database.py           engine, session factory, get_db dependency
+    models.py             ORM: ConversationSession and Complaint
+    schemas.py            all Pydantic models + the LangGraph state schema
+    main.py               FastAPI app, CORS, startup
+    api/complaints.py     the endpoints
+    agent/
+      orchestrator.py     the entire StateGraph: nodes, edges, run_turn
+      llm.py              Groq client, JSON repair, validation, retry
+      prompts.py          prompts, generated from the Pydantic schemas
+    services/
+      file_parser.py      PDF (fitz), DOCX, TXT, EML -> plain text
+frontend/
+  src/
+    App.jsx               two-panel layout, highlight timer
+    api/client.js         the only module that calls fetch
+    store/complaintSlice.js   one slice; one thunk updates both panels
+    components/           ComplaintForm, Field, FormSection,
+                          ChatPanel, MessageList, FileDropzone
+samples/                  four demo complaints, one per file format
+```

@@ -38,11 +38,11 @@ class Settings(BaseSettings):
     # never reaches the React bundle; the frontend talks to our API, and
     # our API talks to Groq.
     groq_api_key: str = Field(..., description="Groq API key, from console.groq.com/keys")
-    # The assignment specified gemma2-9b-it, but Groq decommissioned it. The
-    # brief's own alternative, llama-3.3-70b-versatile, is used instead.
-    groq_model: str = Field(
-        "llama-3.3-70b-versatile", description="Model used by every LangGraph node"
-    )
+    # Defaults to the model the assignment mandates. Groq has since
+    # decommissioned it, so .env.example ships llama-3.3-70b-versatile - the
+    # alternative the brief itself names - and the documented setup path
+    # (copy .env.example to .env) therefore runs on a live model.
+    groq_model: str = Field("gemma2-9b-it", description="Model used by every LangGraph node")
 
     # --- Database ---
     database_url: str = Field(
