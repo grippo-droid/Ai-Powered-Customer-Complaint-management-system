@@ -1,0 +1,39 @@
+# --- Secrets: never commit. Only .env.example is tracked. ---
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# --- Node / React ---
+node_modules/
+dist/
+build/
+.vite/
+npm-debug.log*
+yarn-error.log*
+
+# --- Editors / OS ---
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# --- Local uploads & scratch ---
+uploads/
+*.sqlite3
+*.db
+
+# --- Assignment brief (reference only, not part of the deliverable) ---
+Aivoa Internship details.md

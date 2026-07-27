@@ -1,0 +1,23 @@
+# --- Web layer ---
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+python-multipart==0.0.20         # multipart/form-data file uploads
+
+# --- Config & validation ---
+pydantic==2.10.4
+pydantic-settings==2.7.0
+python-dotenv==1.0.1
+
+# --- Database (MySQL) ---
+SQLAlchemy==2.0.36
+PyMySQL==1.1.1
+cryptography==44.0.0             # required by PyMySQL for caching_sha2_password
+
+# --- AI ---
+groq==0.15.0
+langgraph==0.2.60
+
+# --- Document parsing ---
+PyMuPDF==1.25.1                  # imported as `fitz`, used for PDF text
+python-docx==1.1.2               # .docx
+# .txt and .eml are handled with the standard library (email.parser)
