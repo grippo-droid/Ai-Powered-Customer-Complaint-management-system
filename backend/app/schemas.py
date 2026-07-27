@@ -282,6 +282,19 @@ RISK_FIELD_NAMES: tuple[str, ...] = (
 # ---------------------------------------------------------------------------
 
 
+class SessionCreateRequest(BaseModel):
+    """
+    Body for POST /complaints/session.
+
+    The frontend keeps its session_id in localStorage and sends it back here.
+    If it names a session that still exists and is not committed, we return
+    that one instead of creating another - so a page refresh or a double-
+    click resumes the conversation rather than orphaning it.
+    """
+
+    session_id: Optional[str] = None
+
+
 class SessionCreateResponse(BaseModel):
     session_id: str
     form_state: ComplaintFormState
