@@ -41,7 +41,7 @@ from app.schemas import (
     SessionStateResponse,
 )
 from app.services.duplicates import check_for_duplicates
-from app.services.file_parser import FileParseError, extract_text_from_upload
+from app.services.file_parser import FileParseError, extract_text_from_upload, validate_upload
 
 logger = logging.getLogger(__name__)
 
@@ -203,9 +203,15 @@ async def send_message(
 
     # --- File upload path -------------------------------------------------
     if file is not None and file.filename:
-        raw = await file.read()
         source_label = file.filename
         try:
+            # Check extension and size BEFORE reading the body. Starlette has
+            # already parsed the multipart request and populated .size, so an
+            # oversized or unsupported upload is rejected without ever being
+            # pulled into this process as a bytes object.
+            validate_upload(file.filename, file.size or 0)
+
+            raw = await file.read()
             text = extract_text_from_upload(file.filename, raw)
         except FileParseError as exc:
             # A parse failure is a conversation event, not a server error.
