@@ -50,9 +50,12 @@ FIELD_LABELS: Dict[str, str] = {
     "complaint_type": "Complaint Type",
     "complaint_date": "Complaint Date",
     "complaint_description": "Complaint Description",
+    "complaint_summary": "Complaint Summary",
     "severity_suggested": "Severity (Suggested)",
     "suggested_next_action": "Suggested Next Action",
     "initial_risk_assessment": "Initial Risk Assessment",
+    "root_cause_suggestion": "Possible Root Causes (to investigate)",
+    "capa_recommendation": "Suggested CAPA (Corrective & Preventive)",
 }
 
 
@@ -234,8 +237,28 @@ Judge severity by patient impact and GMP significance:
 Use your own judgement and pharma-QA vocabulary; you are not restricted to
 those three words.
 
-The justification must reference the SPECIFIC product, batch and defect. Never
-write a generic sentence that would fit any complaint.
+You also write a one-sentence SUMMARY of the complaint, phrased like the title
+of a QMS ticket - defect, product, batch, scale. It must be a fragment, not a
+sentence about the complaint: write "Foreign matter contamination in Metformin
+HCl API batch MFH260712A, 1 of 3 drums affected", not "This complaint is about
+a customer who found...".
+
+The summary and the justification are different lengths and different jobs:
+the summary is a scannable title, the justification explains the severity.
+Do not repeat one in the other.
+
+You also propose POSSIBLE ROOT CAUSES. These are hypotheses for the QA
+investigation to test, never a diagnosis: you have not seen the batch record,
+the equipment logs or the retained sample. Give one or two plausible causes
+tied to this specific defect, and phrase them as possibilities.
+
+And a short CAPA RECOMMENDATION - one corrective action (what to do about the
+affected stock now) and one preventive action (what to change so it cannot
+recur). One to two sentences each, no more. Do not write an essay, and do not
+restate the severity.
+
+Everything you write must reference the SPECIFIC product, batch and defect.
+Never write a generic sentence that would fit any complaint.
 
 Return ONLY a JSON object. No markdown, no code fences."""
 

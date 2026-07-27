@@ -143,10 +143,27 @@ class ComplaintFields(BaseModel):
 
 
 class RiskAssessment(BaseModel):
-    """Section 4 of the form - written by the AI Copilot, never typed by hand."""
+    """
+    Section 4 of the form - written by the AI Copilot, never typed by hand.
+
+    Note that `complaint_summary` is not strictly a *risk* output. It rides
+    along in this model, and therefore in the same LLM call, because it is
+    derived from exactly the same evidence and regenerated on exactly the
+    same trigger. Asking for it separately would double the Groq calls on
+    every defect-relevant turn to save nothing.
+    """
 
     model_config = ConfigDict(extra="ignore")
 
+    complaint_summary: str = Field(
+        ...,
+        description=(
+            "One sentence, written like a ticket title, naming the defect, the "
+            "product and the batch. Example: 'Foreign matter contamination in "
+            "Metformin HCl API batch MFH260712A, 1 of 3 drums affected'. "
+            "No preamble, no 'This complaint is about'."
+        ),
+    )
     severity_suggested: str = Field(
         ...,
         description=(
@@ -166,6 +183,25 @@ class RiskAssessment(BaseModel):
         description=(
             "1-3 sentence justification referencing the specific defect, product "
             "and batch. Explains WHY this severity was suggested."
+        ),
+    )
+    root_cause_suggestion: str = Field(
+        ...,
+        description=(
+            "1-2 PLAUSIBLE root causes for QA to investigate, phrased as "
+            "possibilities and not as findings. Example: 'Possible root causes: "
+            "primary packaging seal failure at the blistering station; moisture "
+            "ingress during storage or transit.'"
+        ),
+    )
+    capa_recommendation: str = Field(
+        ...,
+        description=(
+            "One corrective action (what to do about affected stock now) and one "
+            "preventive action (what to change so it cannot recur). One to two "
+            "sentences each, no more. Example: 'Corrective: quarantine and "
+            "re-inspect remaining stock from batch X. Preventive: review the drum "
+            "sealing QC checkpoint at the manufacturing site.'"
         ),
     )
 
@@ -271,9 +307,12 @@ DEFECT_RELEVANT_FIELDS: frozenset[str] = frozenset(
 )
 
 RISK_FIELD_NAMES: tuple[str, ...] = (
+    "complaint_summary",
     "severity_suggested",
     "suggested_next_action",
     "initial_risk_assessment",
+    "root_cause_suggestion",
+    "capa_recommendation",
 )
 
 
@@ -348,9 +387,12 @@ class ComplaintOut(BaseModel):
     complaint_type: Optional[str] = None
     complaint_date: Optional[str] = None
     complaint_description: Optional[str] = None
+    complaint_summary: Optional[str] = None
     severity_suggested: Optional[str] = None
     suggested_next_action: Optional[str] = None
     initial_risk_assessment: Optional[str] = None
+    root_cause_suggestion: Optional[str] = None
+    capa_recommendation: Optional[str] = None
     source_session_id: Optional[str] = None
     created_at: datetime
 

@@ -135,6 +135,17 @@ export default function ComplaintForm() {
         </FormSection>
 
         <FormSection number="4" title="AI copilot risk assessment" className="risk-card">
+          {/* Ticket-title summary, kept at the top of the card: it is the one
+              line a reviewer reads to know what this complaint is. */}
+          <Field
+            name="complaint_summary"
+            label="Complaint Summary"
+            value={riskAssessment.complaint_summary}
+            changed={isChanged('complaint_summary')}
+            placeholder="Awaiting AI assessment..."
+            full
+            disabled={committed}
+          />
           <Field
             name="severity_suggested"
             label="Severity (Suggested)"
@@ -156,6 +167,32 @@ export default function ComplaintForm() {
             label="Initial Risk Assessment"
             value={riskAssessment.initial_risk_assessment}
             changed={isChanged('initial_risk_assessment')}
+            placeholder="Awaiting AI assessment..."
+            rows={3}
+            full
+            disabled={committed}
+          />
+
+          {/* Everything below the rule is a SUGGESTION for the investigation
+              to test, not a finding. The divider and the labels both say so -
+              a QA reviewer must never read an AI hypothesis as a conclusion. */}
+          <p className="risk-divider field-full">Suggestions for QA investigation</p>
+
+          <Field
+            name="root_cause_suggestion"
+            label="Possible Root Causes (to investigate)"
+            value={riskAssessment.root_cause_suggestion}
+            changed={isChanged('root_cause_suggestion')}
+            placeholder="Awaiting AI assessment..."
+            rows={2}
+            full
+            disabled={committed}
+          />
+          <Field
+            name="capa_recommendation"
+            label="Suggested CAPA (Corrective &amp; Preventive)"
+            value={riskAssessment.capa_recommendation}
+            changed={isChanged('capa_recommendation')}
             placeholder="Awaiting AI assessment..."
             rows={3}
             full

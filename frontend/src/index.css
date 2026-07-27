@@ -428,6 +428,27 @@ body {
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
 }
 
+/* Separates the assessment from the investigation suggestions below it. */
+.risk-card .risk-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 4px 0 0;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--risk-indigo);
+  opacity: 0.75;
+}
+
+.risk-card .risk-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: #d9dffa;
+}
+
 /* The changed-field highlight must still read as green in here, not indigo -
    that flash is what tells the reviewer the AI just rewrote the assessment. */
 .risk-card .field-changed .field-label {

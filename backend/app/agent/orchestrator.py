@@ -256,7 +256,11 @@ def assess_risk(state: AgentState) -> Dict[str, Any]:
             prompts.build_risk_prompt(fields),
             RiskAssessment,
             temperature=0.2,  # a touch of warmth: this text is prose, not data
-            max_tokens=600,
+            # Six fields now: summary, severity, action, justification, root
+            # cause, CAPA. ~310 tokens typically, ~700 if the model is verbose.
+            # The headroom is free (max_tokens caps, it does not target) and a
+            # truncated JSON object would fail validation and burn the retry.
+            max_tokens=1400,
         )
     except LLMError as exc:
         logger.warning("Risk assessment failed; keeping extracted fields. %s", exc)

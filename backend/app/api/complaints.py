@@ -325,9 +325,12 @@ def commit_session(
 
     complaint = Complaint(
         **fields.model_dump(),
+        complaint_summary=risk.complaint_summary if risk else None,
         severity_suggested=risk.severity_suggested if risk else None,
         suggested_next_action=risk.suggested_next_action if risk else None,
         initial_risk_assessment=risk.initial_risk_assessment if risk else None,
+        root_cause_suggestion=risk.root_cause_suggestion if risk else None,
+        capa_recommendation=risk.capa_recommendation if risk else None,
         source_session_id=record.session_id,
     )
     db.add(complaint)

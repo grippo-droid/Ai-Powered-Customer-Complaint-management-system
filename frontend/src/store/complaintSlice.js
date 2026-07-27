@@ -34,9 +34,12 @@ export const EMPTY_FIELDS = {
 };
 
 export const EMPTY_RISK = {
+  complaint_summary: '',
   severity_suggested: '',
   suggested_next_action: '',
   initial_risk_assessment: '',
+  root_cause_suggestion: '',
+  capa_recommendation: '',
 };
 
 function normalizeFields(apiFields) {
@@ -50,9 +53,12 @@ function normalizeFields(apiFields) {
 function normalizeRisk(apiRisk) {
   if (!apiRisk) return { ...EMPTY_RISK };
   return {
+    complaint_summary: apiRisk.complaint_summary ?? '',
     severity_suggested: apiRisk.severity_suggested ?? '',
     suggested_next_action: apiRisk.suggested_next_action ?? '',
     initial_risk_assessment: apiRisk.initial_risk_assessment ?? '',
+    root_cause_suggestion: apiRisk.root_cause_suggestion ?? '',
+    capa_recommendation: apiRisk.capa_recommendation ?? '',
   };
 }
 

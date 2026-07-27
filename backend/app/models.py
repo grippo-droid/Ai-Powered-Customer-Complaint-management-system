@@ -129,12 +129,22 @@ class Complaint(Base):
     complaint_description: Mapped[str | None] = mapped_column(Text)
 
     # --- Section 4: AI Copilot Risk Assessment ---
+    # One-sentence ticket title, so GET /complaints is scannable without
+    # reading each full description.
+    complaint_summary: Mapped[str | None] = mapped_column(String(512))
+
     # Stored as written by the AI at commit time. Severity is free text, not
     # an enum column: pharma QA vocabulary varies by company SOP, and pinning
     # it to three values would make the model's judgement lossy.
     severity_suggested: Mapped[str | None] = mapped_column(String(64))
     suggested_next_action: Mapped[str | None] = mapped_column(String(512))
     initial_risk_assessment: Mapped[str | None] = mapped_column(Text)
+
+    # AI suggestions for the investigation, not conclusions. Stored so the
+    # ledger records what the copilot proposed at intake time, which is what
+    # a QA reviewer would later audit against what was actually done.
+    root_cause_suggestion: Mapped[str | None] = mapped_column(Text)
+    capa_recommendation: Mapped[str | None] = mapped_column(Text)
 
     # --- Provenance ---
     # Which conversation produced this record. Kept for traceability, which
