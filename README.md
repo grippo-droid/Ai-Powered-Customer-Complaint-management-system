@@ -7,10 +7,19 @@ fields** without re-extracting everything else.
 
 Built for the AIVOA Round 1 AI Product Engineer assignment.
 
+## Demo & walkthrough
+
+- **Demo video** — working demonstration of the AI tools and frontend features:
+  <https://drive.google.com/file/d/1dsf_AghJ9b-juN8JlQ9xZFP8R3vQk4kz/view?usp=sharing>
+- **Code walkthrough** — end-to-end explanation of the code, from the uploaded
+  document through to the populated form:
+  <https://drive.google.com/file/d/19AjY5JZysoPH-Co7zBd2wtkRrp1S3tVC/view?usp=sharing>
+
 ---
 
 ## Contents
 
+- [Demo & walkthrough](#demo--walkthrough)
 - [What it does](#what-it-does)
 - [Tech stack](#tech-stack)
 - [Setup](#setup)
