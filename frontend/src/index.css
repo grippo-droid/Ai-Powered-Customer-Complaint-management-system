@@ -361,6 +361,93 @@ body {
 }
 
 /* ---------------------------------------------------------------------------
+   Section 4 - AI Copilot Risk Assessment
+   Every rule is scoped under .risk-card, so sections 1-3 are unaffected.
+   --------------------------------------------------------------------------- */
+
+.risk-card {
+  --risk-indigo: #6366f1;
+  --risk-indigo-strong: #4f46e5;
+
+  /* Shield-check icon as a data URI, used as a mask below so its colour is
+     controlled by CSS and no SVG component or image asset is introduced. */
+  --shield-icon: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z'/%3E%3Cpath d='m9 12 2 2 4-4'/%3E%3C/svg%3E");
+
+  padding: 16px;
+  border-radius: 16px;
+  background: #eef2ff;
+  border: 1px solid #e0e7ff;
+  box-shadow: 0 1px 2px rgba(79, 70, 229, 0.07);
+}
+
+/* The numbered chip is replaced by the shield icon. */
+.risk-card .section-number {
+  display: none;
+}
+
+.risk-card .section-title {
+  margin-bottom: 14px;
+  padding-bottom: 0;
+  border-bottom: none;
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  color: var(--risk-indigo-strong);
+}
+
+/* .section-title is already a flex row with a gap, so ::before lines up as
+   its first item without any layout change. */
+.risk-card .section-title::before {
+  content: '';
+  flex: none;
+  width: 17px;
+  height: 17px;
+  background-color: var(--risk-indigo);
+  -webkit-mask: var(--shield-icon) center / contain no-repeat;
+  mask: var(--shield-icon) center / contain no-repeat;
+}
+
+.risk-card .field-label {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--risk-indigo-strong);
+}
+
+/* White inputs so they lift off the lavender card. */
+.risk-card .field-input,
+.risk-card .field-textarea {
+  border-radius: 8px;
+  border-color: #dfe3f5;
+  background: #ffffff;
+}
+
+.risk-card .field-input:focus,
+.risk-card .field-textarea:focus {
+  border-color: var(--risk-indigo);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+}
+
+/* The changed-field highlight must still read as green in here, not indigo -
+   that flash is what tells the reviewer the AI just rewrote the assessment. */
+.risk-card .field-changed .field-label {
+  color: var(--green);
+}
+
+/* Commit button: indigo, fills the footer beside Reset Form. */
+.btn-commit {
+  flex: 1;
+  border-radius: 8px;
+  background: #4f46e5;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.btn-commit:hover:not(:disabled) {
+  background: #4338ca;
+}
+
+/* ---------------------------------------------------------------------------
    Chat panel
    --------------------------------------------------------------------------- */
 

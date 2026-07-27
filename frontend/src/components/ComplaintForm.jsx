@@ -134,7 +134,7 @@ export default function ComplaintForm() {
           />
         </FormSection>
 
-        <FormSection number="4" title="AI Copilot Risk Assessment">
+        <FormSection number="4" title="AI copilot risk assessment" className="risk-card">
           <Field
             name="severity_suggested"
             label="Severity (Suggested)"
@@ -170,7 +170,7 @@ export default function ComplaintForm() {
         </button>
         <button
           type="button"
-          className="btn btn-primary"
+          className="btn btn-commit"
           onClick={() => dispatch(commitToLedger())}
           disabled={committed || isCommitting || status !== 'ready_to_commit'}
           title={
