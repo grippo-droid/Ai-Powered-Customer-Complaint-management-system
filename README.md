@@ -7,6 +7,23 @@ fields** without re-extracting everything else.
 
 Built for the AIVOA Round 1 AI Product Engineer assignment.
 
+## Live demo
+
+**PASTE_YOUR_VERCEL_URL_HERE**
+
+Try it with any file from [`samples/`](samples/) — there is one of each
+supported format. Two things worth knowing before you click:
+
+- **The first load can take up to a minute.** The backend runs on a free tier
+  that stops the container when idle, so the first request of the day waits for
+  it to start. The page says so while it happens.
+- **The AI has a daily budget.** Groq's free tier allows roughly 100,000 tokens
+  a day across all visitors, and each visitor is capped at 10 AI requests an
+  hour so nobody can drain it alone. If the day's budget is spent, the assistant
+  says so and you can still fill in and commit the form by hand.
+
+Deployment is documented in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
 ## Demo & walkthrough
 
 - **Demo video** — working demonstration of the AI tools and frontend features:
@@ -19,10 +36,12 @@ Built for the AIVOA Round 1 AI Product Engineer assignment.
 
 ## Contents
 
+- [Live demo](#live-demo)
 - [Demo & walkthrough](#demo--walkthrough)
 - [What it does](#what-it-does)
 - [Tech stack](#tech-stack)
 - [Setup](#setup)
+- [Deployment](docs/DEPLOYMENT.md)
 - [Architecture](#architecture)
 - [The correction mechanic](#the-correction-mechanic)
 - [Design decisions](#design-decisions)
@@ -416,6 +435,10 @@ recorded in the message history and survives a refresh.
 - Uploads are validated for extension and size **before** parsing.
 - Session ids are UUID4, not sequential integers, so in-progress complaints
   cannot be enumerated by guessing.
+- The public demo caps AI turns per client IP, so one visitor cannot spend the
+  shared daily Groq quota. It is a courtesy limit rather than a security
+  control — the header it trusts can be spoofed — and it is disabled by default
+  so local development is never throttled.
 
 ---
 
@@ -521,6 +544,10 @@ run unmodified on either model, and `GROQ_MODEL` selects between them.
 ## Project structure
 
 ```
+render.yaml               Render blueprint for the backend service
+docs/
+  DEPLOYMENT.md           how the live demo is hosted, start to finish
+  screenshots/            the images used above
 backend/
   .env.example            documents every required environment variable
   requirements.txt
@@ -537,6 +564,8 @@ backend/
       prompts.py          prompts, generated from the Pydantic schemas
     services/
       file_parser.py      PDF (fitz), DOCX, TXT, EML -> plain text
+      duplicates.py       "have we seen this batch before?" ledger lookup
+      rate_limit.py       per-IP cap on AI turns, for the public demo
 frontend/
   src/
     App.jsx               two-panel layout, highlight timer

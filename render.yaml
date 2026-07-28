@@ -1,0 +1,73 @@
+# Render Blueprint - deploys the FastAPI backend.
+#
+# Only the backend lives here. The React frontend is a static bundle and is
+# deployed to Vercel; the database is a managed MySQL service. Three hosts,
+# each doing the thing it is good at.
+#
+# To use: Render dashboard -> New -> Blueprint -> pick this repository.
+# Render reads this file and asks for the four secrets marked `sync: false`.
+#
+# Full walkthrough, including where each value comes from: docs/DEPLOYMENT.md
+
+services:
+  - type: web
+    name: complaint-qms-api
+    runtime: python
+    plan: free
+    # Singapore is the closest free-plan region to India, which is where the
+    # demo is watched from. Change it if that is not true for you - it only
+    # affects latency, nothing else.
+    region: singapore
+
+    # The FastAPI app is in backend/, not the repository root, so requirements
+    # resolution and the start command both run from there.
+    rootDir: backend
+
+    buildCommand: pip install -r requirements.txt
+
+    # $PORT is assigned by Render at runtime and must not be hard-coded.
+    # Host 0.0.0.0, not 127.0.0.1, or the container's proxy cannot reach us.
+    #
+    # No --reload here (that is a development flag), and one worker: the free
+    # plan has 512 MB of RAM, and a second uvicorn worker would both risk that
+    # ceiling and give each worker its own in-memory rate-limit counters.
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT --workers 1
+
+    # Render polls this to decide whether a deploy succeeded. /health touches
+    # neither the database nor Groq, so it stays honest about the process
+    # being up without spending quota on every poll.
+    healthCheckPath: /health
+
+    envVars:
+      # Pinned deliberately. PyMuPDF and cryptography ship pre-built wheels
+      # per Python version; letting Render pick a brand-new interpreter is how
+      # a build that worked last month starts compiling C from source and
+      # times out.
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # `sync: false` means: prompt for this in the dashboard, never store it
+      # in the repository. This file is committed to a public repo, so no
+      # secret may have a literal value here.
+      - key: GROQ_API_KEY
+        sync: false
+
+      # mysql+pymysql://<user>:<pass>@<host>:<port>/<db>?ssl_ca=/etc/ssl/certs/ca-certificates.crt
+      # The ssl_ca parameter is required by hosted MySQL providers, which all
+      # refuse unencrypted connections. See docs/DEPLOYMENT.md.
+      - key: DATABASE_URL
+        sync: false
+
+      # The deployed frontend's origin, e.g. https://your-app.vercel.app
+      # Comma-separated, no trailing slash, never "*".
+      - key: CORS_ORIGINS
+        sync: false
+
+      - key: GROQ_MODEL
+        value: llama-3.3-70b-versatile
+
+      # AI turns per visitor per hour. The Groq free tier is one shared daily
+      # token budget, so without a cap a single enthusiastic visitor can spend
+      # the whole day's allowance in a couple of minutes.
+      - key: RATE_LIMIT_PER_HOUR
+        value: "10"

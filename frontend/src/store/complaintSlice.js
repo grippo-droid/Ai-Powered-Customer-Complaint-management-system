@@ -17,6 +17,21 @@ import * as api from '../api/client';
 
 const SESSION_STORAGE_KEY = 'qms.sessionId';
 
+/**
+ * How long to wait before telling the user the server is still starting.
+ *
+ * The hosted demo runs on a free tier that stops the container after a period
+ * of inactivity, so the first request after a quiet spell has to wait for it
+ * to boot - typically 30-60 seconds. Locally this never fires, because the
+ * response arrives in milliseconds.
+ */
+const WAKE_NOTICE_MS = 4000;
+
+/** Delay before the single boot retry. Cold starts can 502 at the proxy. */
+const BOOT_RETRY_MS = 3000;
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
 // Controlled React inputs need '' rather than null/undefined, so the empty
 // form is defined here and the API's nulls are converted on the way in.
 export const EMPTY_FIELDS = {
@@ -87,26 +102,46 @@ function toApiFormState(state) {
  * it is still open. That keeps React StrictMode's double effect invocation
  * from creating two sessions in development.
  */
-export const bootSession = createAsyncThunk('complaint/boot', async (_, { rejectWithValue }) => {
-  try {
-    const storedId = localStorage.getItem(SESSION_STORAGE_KEY);
+export const bootSession = createAsyncThunk(
+  'complaint/boot',
+  async (_, { dispatch, rejectWithValue }) => {
+    // Say something if the backend is slow to answer. A blank panel for a
+    // minute reads as "this is broken"; "waking the server" reads as "wait".
+    const notice = setTimeout(() => dispatch(serverWaking()), WAKE_NOTICE_MS);
 
-    if (storedId) {
-      try {
-        const restored = await api.fetchSession(storedId);
-        if (!restored.committed) return { ...restored, restored: true };
-      } catch {
-        // Session was deleted or the DB was reset - fall through and start fresh.
+    try {
+      const storedId = localStorage.getItem(SESSION_STORAGE_KEY);
+
+      if (storedId) {
+        try {
+          const restored = await api.fetchSession(storedId);
+          if (!restored.committed) return { ...restored, restored: true };
+        } catch {
+          // Session was deleted or the DB was reset - fall through and start fresh.
+        }
       }
-    }
 
-    const created = await api.startSession(null);
-    localStorage.setItem(SESSION_STORAGE_KEY, created.session_id);
-    return { ...created, messages: [], restored: false };
-  } catch (error) {
-    return rejectWithValue(error.message);
+      let created;
+      try {
+        created = await api.startSession(null);
+      } catch (first) {
+        // A host that is still starting can bounce the first request at its
+        // proxy before the app is listening. One retry turns that into a
+        // slightly slow load instead of an error screen on someone's first
+        // ever visit. If the second attempt also fails, the failure is real.
+        await sleep(BOOT_RETRY_MS);
+        created = await api.startSession(null);
+      }
+
+      localStorage.setItem(SESSION_STORAGE_KEY, created.session_id);
+      return { ...created, messages: [], restored: false };
+    } catch (error) {
+      return rejectWithValue(error.message);
+    } finally {
+      clearTimeout(notice);
+    }
   }
-});
+);
 
 /** Send pasted text or an uploaded file, and apply the assistant's turn. */
 export const sendUserMessage = createAsyncThunk(
@@ -162,6 +197,7 @@ const initialState = {
   changedFields: [], // drives the green highlight; cleared by a timer
 
   isBooting: true,
+  isWakingServer: false, // boot is taking long enough to be worth explaining
   isSending: false,
   isCommitting: false,
   error: null,
@@ -197,6 +233,11 @@ const complaintSlice = createSlice({
       state.error = null;
     },
 
+    /** Boot is slow - the hosted backend is probably still starting up. */
+    serverWaking(state) {
+      state.isWakingServer = true;
+    },
+
     /** Optimistic echo, so the user's message appears instantly. */
     appendLocalMessage(state, action) {
       state.messages.push({
@@ -212,10 +253,12 @@ const complaintSlice = createSlice({
       // --- boot ---
       .addCase(bootSession.pending, (state) => {
         state.isBooting = true;
+        state.isWakingServer = false;
         state.error = null;
       })
       .addCase(bootSession.fulfilled, (state, action) => {
         state.isBooting = false;
+        state.isWakingServer = false;
         state.sessionId = action.payload.session_id;
         state.committed = action.payload.committed ?? false;
         applyTurn(state, action.payload);
@@ -226,6 +269,7 @@ const complaintSlice = createSlice({
       })
       .addCase(bootSession.rejected, (state, action) => {
         state.isBooting = false;
+        state.isWakingServer = false;
         state.error = action.payload || 'Could not reach the server.';
       })
 
@@ -295,7 +339,7 @@ const complaintSlice = createSlice({
   },
 });
 
-export const { updateField, clearHighlights, dismissError, appendLocalMessage } =
+export const { updateField, clearHighlights, dismissError, appendLocalMessage, serverWaking } =
   complaintSlice.actions;
 
 export default complaintSlice.reducer;

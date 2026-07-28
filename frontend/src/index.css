@@ -601,6 +601,33 @@ body {
   animation: spin 700ms linear infinite;
 }
 
+/* Cold-start notice for the hosted demo.
+   Fixed rather than in the flow on purpose: .app is a full-height grid, and a
+   banner inside it would resize both panels for a few seconds and then let
+   them snap back. Floating it leaves the layout completely untouched. */
+.wake-banner {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 16px;
+  border: 1px solid var(--amber-border);
+  border-radius: var(--radius);
+  background: var(--amber-soft);
+  color: var(--amber);
+  font-size: 13px;
+  box-shadow: var(--shadow);
+}
+
+.wake-banner .spinner {
+  flex-shrink: 0;
+}
+
 @keyframes spin {
   to {
     transform: rotate(360deg);

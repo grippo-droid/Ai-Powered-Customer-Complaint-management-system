@@ -16,6 +16,7 @@ const HIGHLIGHT_MS = 2400;
 export default function App() {
   const dispatch = useDispatch();
   const changedFields = useSelector((state) => state.complaint.changedFields);
+  const isWakingServer = useSelector((state) => state.complaint.isWakingServer);
 
   // React 18 StrictMode runs effects twice in development. The backend's
   // session endpoint is idempotent by id, but on a very first visit there is
@@ -39,6 +40,18 @@ export default function App() {
 
   return (
     <div className="app">
+      {/* Only ever seen on the hosted demo, whose free-tier container stops
+          when idle. role="status" so a screen reader announces it without
+          stealing focus. */}
+      {isWakingServer && (
+        <div className="wake-banner" role="status">
+          <span className="spinner" />
+          <span>
+            Waking the demo server — it sleeps when idle, so this first load can take up to a
+            minute. Nothing is broken.
+          </span>
+        </div>
+      )}
       <ComplaintForm />
       <ChatPanel />
     </div>
