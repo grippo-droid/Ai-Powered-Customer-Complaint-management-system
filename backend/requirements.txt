@@ -13,6 +13,15 @@ SQLAlchemy==2.0.36
 PyMySQL==1.1.1
 cryptography==44.0.0             # required by PyMySQL for caching_sha2_password
 
+# --- Authentication ---
+passlib[bcrypt]==1.7.4
+# bcrypt is pinned BELOW 4.1 on purpose. passlib 1.7.4 reads bcrypt.__about__
+# to detect the backend version, and bcrypt removed that attribute in 4.1, so
+# newer versions make passlib log a spurious "error reading bcrypt version"
+# traceback on the first hash. It still works, but a scary traceback on every
+# cold start is not something to ship.
+bcrypt==4.0.1
+
 # --- AI ---
 groq==0.15.0
 langgraph==0.2.60

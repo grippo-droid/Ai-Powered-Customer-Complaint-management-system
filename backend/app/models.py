@@ -1,5 +1,5 @@
 """
-SQLAlchemy ORM models - the two MySQL tables.
+SQLAlchemy ORM models - the three MySQL tables.
 
     conversation_sessions : the LIVE, in-progress intake conversation.
                             One row per browser session. Holds the working
@@ -9,20 +9,24 @@ SQLAlchemy ORM models - the two MySQL tables.
                             when the user clicks "Commit to QMS Ledger".
                             Flat columns, queryable, never mutated by the AI.
 
-The split is the point: the AI is free to rewrite the session row on every
-turn, but it can only ever *append* to the ledger, and only when a human
-presses the button. That mirrors how a real pharma QMS separates a draft
-intake from a controlled record.
+    users                 : who is allowed to do the above, and which of
+                            them may sign a complaint off into the ledger.
+
+The split between the first two is the point: the AI is free to rewrite the
+session row on every turn, but it can only ever *append* to the ledger, and
+only when a human presses the button. That mirrors how a real pharma QMS
+separates a draft intake from a controlled record.
 
 All access is through this ORM. No raw SQL strings anywhere in the project.
 """
 
 from __future__ import annotations
 
+import enum
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
-from sqlalchemy import JSON, Boolean, DateTime, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, Index, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -36,6 +40,78 @@ def _utcnow() -> datetime:
     the deprecated datetime.utcnow() keeps us clean on Python 3.12+.
     """
     return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
+class UserRole(str, enum.Enum):
+    """
+    Who may do what.
+
+    Two roles, because the system has exactly one privileged action: writing
+    a complaint into the permanent ledger. A reviewer does the intake work -
+    uploading documents, correcting the AI, editing fields. A lead signs it
+    off. Anything finer-grained would be invented complexity for a project
+    with one gated operation.
+
+    Inheriting from `str` matters: the member compares equal to its own
+    string, so it survives a round trip through JSON, a JWT payload and
+    Pydantic without a custom encoder anywhere.
+    """
+
+    QA_REVIEWER = "qa_reviewer"
+    QA_LEAD = "qa_lead"
+
+
+class User(Base):
+    """
+    An account.
+
+    Only the bcrypt hash is stored - the plaintext password exists in this
+    process for the few microseconds it takes to hash or verify it, and is
+    never written to the database, a log line, or an API response. See
+    app/security.py, which is the only module that handles it at all.
+    """
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+
+    # Unique so signup cannot create two accounts for one address, and indexed
+    # because login looks a user up by email on every single request to
+    # /auth/login. The uniqueness is enforced by the DATABASE, not just by a
+    # check in the endpoint: two concurrent signups for the same address would
+    # both pass an application-level "does this email exist?" test and then
+    # both insert. The constraint is what actually makes that impossible.
+    email: Mapped[str] = mapped_column(String(255), nullable=False, unique=True, index=True)
+
+    # A bcrypt hash is 60 characters. 255 leaves room to migrate to a
+    # different algorithm later without an ALTER TABLE, since passlib encodes
+    # the scheme into the string itself.
+    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # `values_callable` is not optional here. By default SQLAlchemy stores the
+    # enum's NAME ("QA_REVIEWER"), not its value, so the MySQL column would
+    # hold values that no longer match the strings used in the JWT payload and
+    # the React UI. This makes the database column ENUM('qa_reviewer','qa_lead')
+    # exactly as written above.
+    #
+    # A native ENUM rather than a plain String because, unlike complaint
+    # severity, this genuinely is a closed set: an unrecognised role is a bug,
+    # and the database should be the thing that refuses it. The cost is that
+    # adding a third role later needs an ALTER TABLE - a fair trade for a
+    # column that gates who can sign off a regulated record.
+    role: Mapped[UserRole] = mapped_column(
+        Enum(UserRole, values_callable=lambda enum_cls: [member.value for member in enum_cls]),
+        nullable=False,
+        default=UserRole.QA_REVIEWER,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=_utcnow)
+
+    def __repr__(self) -> str:
+        # Deliberately no hash, not even truncated. A __repr__ ends up in
+        # debuggers, tracebacks and log lines, which is exactly where a
+        # password hash should never appear.
+        return f"<User id={self.id} email={self.email!r} role={self.role.value!r}>"
 
 
 class ConversationSession(Base):
