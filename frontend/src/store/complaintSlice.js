@@ -14,6 +14,7 @@
 import { createAsyncThunk, createSlice } from '@reduxjs/toolkit';
 
 import * as api from '../api/client';
+import { logout, sessionExpired } from './authSlice';
 
 const SESSION_STORAGE_KEY = 'qms.sessionId';
 
@@ -335,7 +336,26 @@ const complaintSlice = createSlice({
         state.messages = [
           { role: 'assistant', content: action.payload.greeting, timestamp: new Date().toISOString() },
         ];
-      });
+      })
+
+      // --- the user went away ---
+      //
+      // Two slices react to one action. Dropping the stored session id is the
+      // point: it is keyed to the BROWSER, not the account, so without this
+      // the next person to log in on a shared machine would resume the
+      // previous user's half-finished complaint, chat history included.
+      //
+      // addMatcher rather than two addCases because RTK requires every
+      // addCase to precede every addMatcher, and this needs to sit last.
+      .addMatcher(
+        (action) => action.type === logout.type || action.type === sessionExpired.type,
+        () => {
+          localStorage.removeItem(SESSION_STORAGE_KEY);
+          // Returning a fresh object replaces the state wholesale. isBooting
+          // is false because there is nothing to boot until someone logs in.
+          return { ...initialState, isBooting: false };
+        }
+      );
   },
 });
 
