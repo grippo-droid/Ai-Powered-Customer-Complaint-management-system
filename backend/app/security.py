@@ -1,21 +1,27 @@
 """
-Password hashing.
+Password hashing and JWT issuing/verification.
 
 This module and `config.py` are the only two places in the project that touch
-a credential. Nothing else imports passlib, nothing else sees a plaintext
-password, and no plaintext password is ever logged, returned by an endpoint,
-or written to the database.
+a credential. Nothing else imports passlib or jose, nothing else sees a
+plaintext password or the signing key, and neither is ever logged, returned by
+an endpoint, or written to the database.
 
-JWT issuing and verification are added to this module in the next component;
-keeping both here is what lets the rest of the codebase stay free of any
-security primitives.
+Two halves:
+
+    hash_password / verify_password   bcrypt, for what is stored in users
+    create_access_token / decode_access_token   HS256 JWTs, for who is calling
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict
 
+from jose import JWTError, jwt
 from passlib.context import CryptContext
+
+from app.config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -95,3 +101,102 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         # row is unreadable is useful; its contents are not.
         logger.warning("Stored password hash could not be parsed; treating as a failed login.")
         return False
+
+
+# A hash of a value nobody can log in with, used to burn the same ~250ms
+# bcrypt costs when the email does not exist. Without it, a missing account
+# returns in microseconds and a real one takes a quarter of a second, which
+# tells an attacker which addresses are registered just by timing the replies.
+#
+# Computed once at import so the cost lands on startup, not on a request.
+_DUMMY_HASH = _pwd_context.hash("not-a-real-password-timing-equaliser")
+
+
+def waste_password_time() -> None:
+    """
+    Spend the time a real password check would have taken.
+
+    Called by the login endpoint when no user matches the email, so a failed
+    login costs the same whether the account exists or not.
+    """
+    _pwd_context.verify("timing-equaliser", _DUMMY_HASH)
+
+
+# ---------------------------------------------------------------------------
+# JWT
+# ---------------------------------------------------------------------------
+
+
+class TokenError(Exception):
+    """A token that is missing, malformed, expired, or not correctly signed."""
+
+
+def create_access_token(user_id: int, email: str) -> str:
+    """
+    Issue a signed token identifying one user.
+
+    Claims, and one deliberate omission:
+
+        sub   the user id, as a STRING. RFC 7519 requires sub to be a string;
+              some libraries reject an integer outright, and there is nothing
+              to gain by being the odd one out.
+        email carried for convenience in logs and debugging. Not authority -
+              nothing authorises off it.
+        iat   issued-at, so a token's age is visible.
+        exp   expiry. jose enforces this on decode; we do not check it by hand.
+
+    The ROLE IS NOT IN THE TOKEN, on purpose. A token lives 24 hours, so a
+    role baked into it would keep working for 24 hours after an admin revoked
+    it - a demoted user would keep sign-off rights for a day. Instead the role
+    is read from the database on every request, which makes a change take
+    effect on the very next call.
+
+    The usual argument against that is the extra query. It does not apply
+    here: every protected endpoint already opens a database session and reads
+    at least one row, so the user lookup is one more indexed primary-key hit
+    on a connection that is already open.
+    """
+    now = datetime.now(timezone.utc)
+    payload: Dict[str, Any] = {
+        "sub": str(user_id),
+        "email": email,
+        "iat": now,
+        "exp": now + timedelta(hours=settings.jwt_expiry_hours),
+    }
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def decode_access_token(token: str) -> Dict[str, Any]:
+    """
+    Verify a token's signature and expiry, and return its claims.
+
+    Raises TokenError for every failure mode - bad signature, expired, wrong
+    algorithm, malformed, missing `sub`. The caller turns that into a single
+    401 with one generic message: which of those went wrong is useful to an
+    attacker probing the endpoint and useless to a legitimate user, whose only
+    available action is to log in again.
+
+    `algorithms=` is a list of exactly what we accept. This is the defence
+    against the classic JWT algorithm-confusion attack, where a token is
+    re-signed with "alg": "none" or with HMAC using the public key as the
+    secret. jose only tries the algorithms named here.
+    """
+    if not token:
+        raise TokenError("No token supplied.")
+
+    try:
+        claims = jwt.decode(
+            token,
+            settings.jwt_secret_key,
+            algorithms=[settings.jwt_algorithm],
+        )
+    except JWTError as exc:
+        # The reason is logged for the operator but never returned to the
+        # caller. No token contents in the log line either.
+        logger.info("Rejected a token: %s", exc)
+        raise TokenError("Could not validate credentials.") from exc
+
+    if not claims.get("sub"):
+        raise TokenError("Token is missing its subject claim.")
+
+    return claims

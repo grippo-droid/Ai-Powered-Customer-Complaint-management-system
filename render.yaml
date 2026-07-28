@@ -63,6 +63,14 @@ services:
       - key: CORS_ORIGINS
         sync: false
 
+      # Anyone holding this can mint a token for any user with any role, so it
+      # is prompted for, never written here. `generateValue: true` would work
+      # too, but rotating it invalidates every issued token at once - fine, as
+      # long as that is a decision rather than a surprise on next deploy.
+      # Generate with: python -c "import secrets; print(secrets.token_urlsafe(48))"
+      - key: JWT_SECRET_KEY
+        sync: false
+
       - key: GROQ_MODEL
         value: llama-3.3-70b-versatile
 

@@ -15,7 +15,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import List
 
-from pydantic import Field
+from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # backend/app/config.py -> parents[0] = app/ , parents[1] = backend/
@@ -49,6 +49,46 @@ class Settings(BaseSettings):
         ...,
         description="SQLAlchemy URL, e.g. mysql+pymysql://user:pass@localhost:3306/complaint_qms",
     )
+
+    # --- Authentication ---
+    # The HMAC key every JWT is signed with. Anyone holding it can mint a
+    # token for any user with any role, so it is treated exactly like the
+    # Groq key: required, read only here, never returned by an endpoint.
+    #
+    # No default. A default would mean a deployment that forgot to set it
+    # still boots, signing tokens with a value published in this repository -
+    # which is indistinguishable from having no authentication at all. Failing
+    # to start is the correct response.
+    jwt_secret_key: str = Field(..., description="HMAC signing key for JWTs")
+
+    # HS256: symmetric, one shared secret. Right for a single backend that
+    # both issues and verifies its own tokens. RS256 exists for the case where
+    # a separate service must verify without being able to issue, which is not
+    # this architecture.
+    jwt_algorithm: str = Field("HS256", description="JWT signing algorithm")
+
+    # 24 hours. Long for production - a real QMS would use a short access
+    # token plus a refresh token, so a stolen token expires quickly without
+    # forcing a daily re-login. For a portfolio demo the refresh machinery is
+    # complexity with nothing to show for it, so this is a deliberate, stated
+    # simplification rather than an oversight.
+    jwt_expiry_hours: int = Field(24, ge=1, description="Token lifetime in hours")
+
+    @field_validator("jwt_secret_key")
+    @classmethod
+    def _reject_weak_secret(cls, value: str) -> str:
+        """
+        A short HMAC key is brute-forceable offline; an attacker with any
+        valid token can grind it and then sign their own as qa_lead. 32
+        characters is the floor, and `openssl rand -hex 32` clears it easily.
+        """
+        if len(value) < 32:
+            raise ValueError(
+                f"JWT_SECRET_KEY must be at least 32 characters (got {len(value)}). "
+                f"Generate one with: python -c \"import secrets; "
+                f"print(secrets.token_urlsafe(48))\""
+            )
+        return value
 
     # --- HTTP ---
     # Stored as a raw string, not List[str], on purpose: pydantic-settings
@@ -97,7 +137,7 @@ def get_settings() -> Settings:
             f"Configuration error: {exc}\n\n"
             f"Expected an environment file at: {ENV_FILE}\n"
             f"Copy backend/.env.example to backend/.env and fill in "
-            f"GROQ_API_KEY and DATABASE_URL."
+            f"GROQ_API_KEY, DATABASE_URL and JWT_SECRET_KEY."
         ) from exc
 
 

@@ -401,6 +401,89 @@ class ErrorResponse(BaseModel):
     detail: str
 
 
+# ---------------------------------------------------------------------------
+# 5. AUTH
+#
+# Shapes only. No hashing, no signing, no secret - those live exclusively in
+# app/security.py. Note what has no schema at all: there is no model anywhere
+# that carries `hashed_password`, so no response model can leak one even by
+# accident.
+# ---------------------------------------------------------------------------
+
+# Spelled out rather than imported from models.UserRole, so this module keeps
+# its property of importing nothing from the database layer - schemas.py is
+# pure shape, usable without a configured database.
+#
+# The duplication is real, so it is tested rather than trusted: a unit test
+# asserts these two strings are exactly the values of UserRole, and fails if
+# a role is ever added to one and not the other.
+UserRoleLiteral = Literal["qa_reviewer", "qa_lead"]
+
+
+class UserOut(BaseModel):
+    """
+    A user, as the API returns one.
+
+    Four fields, and the omission is the point: no hashed_password. Because
+    this is the only user-shaped response model in the project, there is no
+    route through which a hash can reach a client.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    role: UserRoleLiteral
+    created_at: datetime
+
+
+class SignupRequest(BaseModel):
+    """
+    Create an account.
+
+    EmailStr is not used deliberately - it needs the extra `email-validator`
+    dependency, and a length-bounded string plus the database's UNIQUE index
+    is enough for an internal tool. The bound matters: users.email is
+    VARCHAR(255), and an unbounded field would let a 10 KB string reach MySQL
+    and fail there instead of here.
+    """
+
+    email: str = Field(..., min_length=3, max_length=255)
+
+    # The floor is repeated in security.hash_password rather than trusted from
+    # here alone, so no code path can create a weak password by bypassing this
+    # schema. The 72-byte ceiling is enforced there too - it is a property of
+    # bcrypt, and expressing it in characters here would be wrong for
+    # multi-byte passwords.
+    password: str = Field(..., min_length=8, max_length=128)
+
+    # Defaults to the LESS privileged role. Self-service signup choosing its
+    # own role is only acceptable because this is a portfolio demo with no
+    # real data - it is called out in the README, because in a real QMS a lead
+    # account would be provisioned by an administrator, never self-claimed.
+    role: UserRoleLiteral = "qa_reviewer"
+
+
+class LoginRequest(BaseModel):
+    email: str = Field(..., min_length=3, max_length=255)
+    password: str = Field(..., min_length=1, max_length=128)
+
+
+class TokenResponse(BaseModel):
+    """
+    What signup and login return.
+
+    `token_type: "bearer"` is the OAuth2 convention and tells the client to
+    send `Authorization: Bearer <token>`. The user is echoed back so the
+    frontend can render the header immediately without a second call to
+    /auth/me on the login round trip.
+    """
+
+    access_token: str
+    token_type: Literal["bearer"] = "bearer"
+    user: UserOut
+
+
 def form_state_to_dict(state: ComplaintFormState) -> Dict[str, Any]:
     """Helper used when persisting the session's form state to the JSON column."""
     return state.model_dump(mode="json")

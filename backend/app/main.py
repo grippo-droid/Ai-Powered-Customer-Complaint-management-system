@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api.auth import router as auth_router
 from app.api.complaints import router as complaints_router
 from app.config import settings
 from app.database import init_db
@@ -68,9 +69,14 @@ app.add_middleware(
     allow_origins=settings.cors_origin_list,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["Content-Type"],
+    # Authorization is required for the Bearer token. Without it here, the
+    # browser's preflight check fails and every authenticated request is
+    # blocked before it is ever sent - which looks like a broken backend but
+    # is the browser doing exactly what CORS asks of it.
+    allow_headers=["Content-Type", "Authorization"],
 )
 
+app.include_router(auth_router)
 app.include_router(complaints_router)
 
 
