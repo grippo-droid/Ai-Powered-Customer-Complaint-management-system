@@ -63,6 +63,18 @@ class Settings(BaseSettings):
     # --- Uploads ---
     max_upload_bytes: int = Field(10 * 1024 * 1024, description="10 MB cap on uploaded documents")
 
+    # --- Abuse protection ---
+    # AI turns per client IP per hour. Only the message endpoint is limited,
+    # because it is the only one that spends Groq quota.
+    #
+    # Defaults to 0 (disabled) so local development and the demo video are
+    # never throttled. The public deployment sets a real number, because the
+    # Groq free tier is a shared daily budget: without a cap, one visitor
+    # hammering the demo would exhaust the day for everyone else.
+    rate_limit_per_hour: int = Field(
+        0, description="Max AI turns per IP per hour; 0 disables the limit"
+    )
+
     @property
     def cors_origin_list(self) -> List[str]:
         """Explicit origins for CORSMiddleware. Never '*' - we send credentials-bearing

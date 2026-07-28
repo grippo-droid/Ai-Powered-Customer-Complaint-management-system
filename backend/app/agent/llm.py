@@ -149,6 +149,21 @@ def _chat(messages: List[Dict[str, str]], temperature: float, max_tokens: int) -
                 "The AI service rejected the API key. Please check GROQ_API_KEY in .env."
             ) from exc
         if exc.status_code == 429:
+            # Groq returns 429 for two very different situations and the only
+            # way to tell them apart is the message body. A per-minute throttle
+            # clears in seconds; the free tier's daily token budget does not
+            # come back until the quota resets, so telling someone to "wait a
+            # moment" would be wrong and they would just retry into the same
+            # wall. The body names the limit it hit, e.g. "on tokens per day
+            # (TPD): Limit 100000, Used 99140".
+            detail = str(exc).lower()
+            if "per day" in detail or "tpd" in detail or "rpd" in detail:
+                raise LLMError(
+                    "This demo has reached its daily AI quota. The project runs on a "
+                    "free Groq tier with a fixed number of tokens per day, and today's "
+                    "budget is spent. It resets in a few hours - please try again then. "
+                    "You can still fill in and commit the form manually."
+                ) from exc
             raise LLMError(
                 "The AI service is rate-limited right now. Please wait a moment and try again."
             ) from exc

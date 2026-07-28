@@ -22,12 +22,24 @@ import logging
 import uuid
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Path, Query, UploadFile, status
+from fastapi import (
+    APIRouter,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    Path,
+    Query,
+    Request,
+    UploadFile,
+    status,
+)
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agent.orchestrator import run_turn
 from app.agent.prompts import label_for
+from app.config import settings
 from app.database import get_db
 from app.models import Complaint, ConversationSession
 from app.schemas import (
@@ -42,6 +54,7 @@ from app.schemas import (
 )
 from app.services.duplicates import check_for_duplicates
 from app.services.file_parser import FileParseError, extract_text_from_upload, validate_upload
+from app.services.rate_limit import RateLimitExceeded, check_rate_limit, client_key
 
 logger = logging.getLogger(__name__)
 
@@ -176,6 +189,7 @@ def _status_for(form_state: ComplaintFormState) -> str:
 
 @router.post("/session/{session_id}/message", response_model=MessageResponse)
 async def send_message(
+    request: Request,
     session_id: str = Path(..., description="Session UUID"),
     message: Optional[str] = Form(None, description="Pasted complaint text or a correction"),
     file: Optional[UploadFile] = File(None, description="PDF, DOCX, TXT or EML"),
@@ -187,6 +201,10 @@ async def send_message(
     Sent as multipart/form-data so a single endpoint handles both inputs -
     the frontend always posts FormData and simply omits whichever part is
     unused.
+
+    This is the only rate-limited endpoint, because it is the only one that
+    spends Groq quota. The limit is off by default and switched on only for
+    the public deployment - see app/services/rate_limit.py.
     """
     record = _load_session(db, session_id)
 
@@ -196,6 +214,20 @@ async def send_message(
             detail="This complaint has already been committed to the ledger. "
             "Please start a new complaint.",
         )
+
+    # Checked here, before any parsing work, so a client that is over its
+    # allowance is turned away cheaply. This does mean an upload rejected for
+    # being the wrong type still costs the caller a slot; that is intentional,
+    # otherwise repeated bad uploads would be an unmetered way to keep the
+    # server busy.
+    try:
+        check_rate_limit(client_key(request), settings.rate_limit_per_hour)
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail=str(exc),
+            headers={"Retry-After": str(exc.retry_after_seconds)},
+        ) from exc
 
     text = (message or "").strip()
     source_label: Optional[str] = None
