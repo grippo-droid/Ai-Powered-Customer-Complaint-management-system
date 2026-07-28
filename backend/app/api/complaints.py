@@ -7,6 +7,11 @@ The HTTP layer - four endpoints plus a session-restore helper.
     POST /complaints/session/{id}/commit   write the record to the ledger
     GET  /complaints                       list committed complaints
 
+EVERY route here requires a valid JWT - declared once on the router rather
+than per-endpoint, so a route added later cannot accidentally ship public.
+The commit endpoint additionally requires the qa_lead role, because it is
+the only action that writes a controlled record rather than editing a draft.
+
 This layer is deliberately thin. Its whole job on a message turn is:
 
     load state from MySQL  ->  run the graph  ->  save state to MySQL  ->  reply
@@ -39,9 +44,10 @@ from sqlalchemy.orm import Session
 
 from app.agent.orchestrator import run_turn
 from app.agent.prompts import label_for
+from app.api.auth import get_current_user, require_qa_lead
 from app.config import settings
 from app.database import get_db
-from app.models import Complaint, ConversationSession
+from app.models import Complaint, ConversationSession, User
 from app.schemas import (
     ChatMessage,
     CommitRequest,
@@ -58,7 +64,22 @@ from app.services.rate_limit import RateLimitExceeded, check_rate_limit, client_
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/complaints", tags=["complaints"])
+# Authentication is declared ONCE, on the router, so it applies to every route
+# below and to any route added later. Hanging Depends(get_current_user) off
+# each endpoint individually would work identically today and leave a hole the
+# first time someone adds a sixth endpoint and forgets - the failure mode being
+# a silently public endpoint, which is the worst kind.
+#
+# This form is used where the endpoint does not need the user OBJECT, only the
+# guarantee that there is one. The two endpoints that do need it declare it
+# again in their signature; FastAPI caches a dependency per request, so
+# get_current_user still runs exactly once and hits the database once.
+router = APIRouter(
+    prefix="/complaints",
+    tags=["complaints"],
+    dependencies=[Depends(get_current_user)],
+    responses={401: {"description": "Missing, expired or invalid token"}},
+)
 
 GREETING = (
     "Upload a complaint document (PDF, DOCX, TXT or EML) or paste the complaint "
@@ -325,14 +346,30 @@ async def send_message(
 # ---------------------------------------------------------------------------
 
 
-@router.post("/session/{session_id}/commit", response_model=ComplaintOut, status_code=201)
+@router.post(
+    "/session/{session_id}/commit",
+    response_model=ComplaintOut,
+    status_code=201,
+    responses={403: {"description": "Requires the qa_lead role"}},
+)
 def commit_session(
     session_id: str = Path(..., description="Session UUID"),
     payload: Optional[CommitRequest] = None,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_qa_lead),
 ) -> Complaint:
     """
     Write the working session into the permanent complaints ledger.
+
+    **Requires the qa_lead role.** This is the only privileged action in the
+    system, and it is the right one to gate: everything else edits a draft
+    that can be thrown away, while this writes a record the QMS treats as
+    controlled. A qa_reviewer doing full intake and then handing off for
+    sign-off is the workflow this models.
+
+    The gate is enforced HERE, on the server. The frontend also disables the
+    button for a reviewer, but that is a courtesy to the user, not the
+    control - anyone can send this request with curl.
 
     The client may send the form state it currently displays. If it does,
     that wins: the reviewer can hand-correct anything the AI produced before
@@ -381,7 +418,17 @@ def commit_session(
     db.commit()
     db.refresh(complaint)
 
-    logger.info("Committed complaint %s from session %s", complaint.id, session_id)
+    # Who signed it off goes in the log. The ledger row itself has no
+    # committed_by column yet - adding one means an ALTER TABLE on an existing
+    # table, which create_all will not do, so it is left as a deliberate
+    # follow-up rather than a half-applied migration.
+    logger.info(
+        "Committed complaint %s from session %s, signed off by %s (%s)",
+        complaint.id,
+        session_id,
+        current_user.email,
+        current_user.role.value,
+    )
     return complaint
 
 

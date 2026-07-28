@@ -17,6 +17,7 @@ model in the project carries a hash.
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -217,6 +218,64 @@ def get_current_user(
         raise unauthorised
 
     return user
+
+
+# ---------------------------------------------------------------------------
+# Role gate
+# ---------------------------------------------------------------------------
+
+
+def require_role(*allowed_roles: UserRole) -> Callable[..., User]:
+    """
+    Build a dependency that admits only the listed roles.
+
+    Used as:
+
+        @router.post("/...", ...)
+        def endpoint(user: User = Depends(require_qa_lead)) -> ...
+
+    A factory rather than a single hard-coded check so the allowed set is
+    written at the endpoint, where a reader can see it, instead of buried in
+    a function whose name they have to trust.
+
+    401 vs 403 is the distinction that matters here, and they are not
+    interchangeable:
+
+        401  we do not know who you are        -> the client should log in
+        403  we do, and you may not do this    -> logging in again will not help
+
+    get_current_user raises the 401. This raises the 403, and only ever after
+    identity is established.
+    """
+    allowed = set(allowed_roles)
+
+    def dependency(current_user: User = Depends(get_current_user)) -> User:
+        if current_user.role not in allowed:
+            # Naming the required role is safe - the caller already knows
+            # their own - and it is what lets the UI say something better
+            # than "forbidden".
+            required = " or ".join(sorted(role.value for role in allowed))
+            logger.info(
+                "Denied %s (role %s) an action requiring %s",
+                current_user.email,
+                current_user.role.value,
+                required,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"This action requires the {required} role. "
+                    f"Your account is {current_user.role.value}."
+                ),
+            )
+        return current_user
+
+    return dependency
+
+
+# The one privileged action in the system: signing a complaint into the
+# permanent ledger.
+require_qa_lead = require_role(UserRole.QA_LEAD)
 
 
 # ---------------------------------------------------------------------------
